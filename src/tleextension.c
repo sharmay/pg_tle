@@ -4087,7 +4087,7 @@ Datum
 pg_tle_install_extension(PG_FUNCTION_ARGS)
 {
 	int		spi_rc;
-	char		*extname;
+	//char		*extname;
 	char		*extvers;
 	char		*extdesc;
 	char		*sql_str;
@@ -4104,22 +4104,23 @@ pg_tle_install_extension(PG_FUNCTION_ARGS)
 	ExtensionControlFile	*control;
 
 
-	if (PG_ARGISNULL(0)) {
+/*	if (PG_ARGISNULL(0)) {
 		ereport(ERROR, (errcode(ERRCODE_NULL_VALUE_NOT_ALLOWED),
 			errmsg("\"name\" is a required argument")));
 	}
 
-	extname = text_to_cstring(PG_GETARG_TEXT_PP(0));
-	check_valid_extension_name(extname);
+	extname = text_to_cstring(PG_GETARG_TEXT_PP(0));*/
+	Name		extname = PG_GETARG_NAME(0);
+	check_valid_extension_name(NameStr(*extname));
 
 	/*
 	 * Verify that extname does not already exist as
 	 * a standard file-based extension.
 	 */
-	filename = get_extension_control_filename(extname);
+	filename = get_extension_control_filename(NameStr(*extname));
 	if (filestat(filename)) {
 		ereport(ERROR, (errcode(ERRCODE_OBJECT_NOT_IN_PREREQUISITE_STATE),
-				errmsg("control file already exists for the %s extension", extname)));
+				errmsg("control file already exists for the %s extension", NameStr(*extname))));
 	}
 
 	if (PG_ARGISNULL(1)) {
@@ -4156,8 +4157,8 @@ pg_tle_install_extension(PG_FUNCTION_ARGS)
 	 * Build appropriate function names based on extension name
 	 * and version
 	 */
-	sqlname = psprintf("%s--%s.sql", extname, extvers);
-	ctlname = psprintf("%s.control", extname);
+	sqlname = psprintf("%s--%s.sql", NameStr(*extname), extvers);
+	ctlname = psprintf("%s.control", NameStr(*extname));
 
 	/*
 	 * Check if PG_TLE_EXTNAME is in the list of requirements.
@@ -4182,7 +4183,7 @@ pg_tle_install_extension(PG_FUNCTION_ARGS)
 	 * We can inherit some of the defaults (encoding: -1)
 	 * In case some defaults change, we will ensure we explicitly set them here.
 	 */
-	control = build_default_extension_control_file(extname);
+	control = build_default_extension_control_file(NameStr(*extname));
 	control->relocatable = false; // explicitly set to false
 	control->superuser = false; // explicitly set to false
 	control->trusted = false; // explicitly set to false;
@@ -4249,14 +4250,14 @@ pg_tle_install_extension(PG_FUNCTION_ARGS)
 	  /* create the control function */
 	  spi_rc = SPI_exec(ctlsql, 0);
 	  if (spi_rc != SPI_OK_UTILITY) {
-	    elog(ERROR, "failed to install pg_tle extension, %s, control string", extname);
+	    elog(ERROR, "failed to install pg_tle extension, %s, control string", NameStr(*extname));
 	    PG_RETURN_BOOL(false);
 	  }
 
 	  /* create the sql function */
 	  spi_rc = SPI_exec(sqlsql, 0);
 	  if (spi_rc != SPI_OK_UTILITY) {
-	    elog(ERROR, "failed to install pg_tle extension, %s, sql string", extname);
+	    elog(ERROR, "failed to install pg_tle extension, %s, sql string", NameStr(*extname));
 	    PG_RETURN_BOOL(false);
 	  }
 	}
@@ -4268,7 +4269,7 @@ pg_tle_install_extension(PG_FUNCTION_ARGS)
 	    FlushErrorState();
 	    ereport(ERROR,
 		    (errcode(ERRCODE_DUPLICATE_OBJECT),
-		     errmsg("extension \"%s\" already installed", extname)));
+		     errmsg("extension \"%s\" already installed", NameStr(*extname))));
 	  }
 	  else
 	  {
@@ -4294,46 +4295,47 @@ Datum
 pg_tle_install_update_path(PG_FUNCTION_ARGS)
 {
 	int				spi_rc;
-	char		*extname;
-	char		*fromvers;
-	char		*tovers;
+	//char		*extname;
+	char		*fromver;
+	char		*tover;
 	char		*sql_str;
 	char		*sqlname;
 	char		*sqlsql;
 	char		   *filename;
 
-	if (PG_ARGISNULL(0)) {
+/*	if (PG_ARGISNULL(0)) {
 		ereport(ERROR, (errcode(ERRCODE_NULL_VALUE_NOT_ALLOWED),
 			errmsg("\"name\" is a required argument")));
 	}
 
-	extname = text_to_cstring(PG_GETARG_TEXT_PP(0));
-	check_valid_extension_name(extname);
+	extname = text_to_cstring(PG_GETARG_TEXT_PP(0));*/
+	Name		extname = PG_GETARG_NAME(0);
+	check_valid_extension_name(NameStr(*extname));
 
 	/*
 	 * Verify that extname does not already exist as
 	 * a standard file-based extension.
 	 */
-	filename = get_extension_control_filename(extname);
+	filename = get_extension_control_filename(NameStr(*extname));
 	if (filestat(filename)) {
 		ereport(ERROR, (errcode(ERRCODE_OBJECT_NOT_IN_PREREQUISITE_STATE),
-				errmsg("control file already exists for the \"%s\" extension", extname)));
+				errmsg("control file already exists for the \"%s\" extension", NameStr(*extname))));
 	}
 
 	if (PG_ARGISNULL(1)) {
 		ereport(ERROR, (errcode(ERRCODE_NULL_VALUE_NOT_ALLOWED),
-			errmsg("\"fromvers\" is a required argument")));
+			errmsg("\"fromver\" is a required argument")));
 	}
 
 	if (PG_ARGISNULL(2)) {
 		ereport(ERROR, (errcode(ERRCODE_NULL_VALUE_NOT_ALLOWED),
-			errmsg("\"tovers\" is a required argument")));
+			errmsg("\"tover\" is a required argument")));
 	}
 
-	fromvers = text_to_cstring(PG_GETARG_TEXT_PP(1));
-	check_valid_version_name(fromvers);
-	tovers = text_to_cstring(PG_GETARG_TEXT_PP(2));
-	check_valid_version_name(tovers);
+	fromver = text_to_cstring(PG_GETARG_TEXT_PP(1));
+	check_valid_version_name(fromver);
+	tover = text_to_cstring(PG_GETARG_TEXT_PP(2));
+	check_valid_version_name(tover);
 
 	if (PG_ARGISNULL(3)) {
 		ereport(ERROR, (errcode(ERRCODE_NULL_VALUE_NOT_ALLOWED),
@@ -4354,7 +4356,7 @@ pg_tle_install_update_path(PG_FUNCTION_ARGS)
 				 errhint("This may be an attempt at a SQL injection attack. Please verify your installation file.")));
 	}
 
-	sqlname = psprintf("%s--%s--%s.sql", extname, fromvers, tovers);
+	sqlname = psprintf("%s--%s--%s.sql", NameStr(*extname), fromver, tover);
 	sqlsql = psprintf(
 		"CREATE FUNCTION %s.%s() RETURNS TEXT AS %s"
 		"SELECT %s%s%s%s LANGUAGE SQL",
@@ -4382,7 +4384,7 @@ pg_tle_install_update_path(PG_FUNCTION_ARGS)
 		/* create the sql function */
 		spi_rc = SPI_exec(sqlsql, 0);
 		if (spi_rc != SPI_OK_UTILITY) {
-			elog(ERROR, "failed to install pg_tle extension, %s, upgrade sql string", extname);
+			elog(ERROR, "failed to install pg_tle extension, %s, upgrade sql string", NameStr(*extname));
 			PG_RETURN_BOOL(false);
 		}
 	}
@@ -4394,7 +4396,7 @@ pg_tle_install_update_path(PG_FUNCTION_ARGS)
 			ereport(ERROR,
 				(errcode(ERRCODE_DUPLICATE_OBJECT),
 				 errmsg("extension \"%s\" update path \"%s-%s\" already installed",
-				 	extname, fromvers, tovers),
+				 	NameStr(*extname), fromver, tover),
 				 errhint("To update this specific install path, first use \"%s.uninstall_update_path\".", PG_TLE_NSPNAME)));
 	  }
 
@@ -4419,7 +4421,7 @@ Datum
 pg_tle_set_default_version(PG_FUNCTION_ARGS)
 {
 	int		spi_rc;
-	char		*extname;
+	//char		*extname;
 	char		*extvers;
 	char		*ctlname;
 	char		*versql;
@@ -4430,22 +4432,23 @@ pg_tle_set_default_version(PG_FUNCTION_ARGS)
 	ExtensionControlFile	*control;
 	char		   *filename;
 
-	if (PG_ARGISNULL(0)) {
+	/*if (PG_ARGISNULL(0)) {
 		ereport(ERROR, (errcode(ERRCODE_NULL_VALUE_NOT_ALLOWED),
 				errmsg("\"name\" is a required argument.")));
 	}
 
-	extname = text_to_cstring(PG_GETARG_TEXT_PP(0));
-	check_valid_extension_name(extname);
+	extname = text_to_cstring(PG_GETARG_TEXT_PP(0));*/
+	Name		extname = PG_GETARG_NAME(0);
+	check_valid_extension_name(NameStr(*extname));
 
 	/*
 	 * Verify that extname does not already exist as
 	 * a standard file-based extension.
 	 */
-	filename = get_extension_control_filename(extname);
+	filename = get_extension_control_filename(NameStr(*extname));
 	if (filestat(filename)) {
 		ereport(ERROR, (errcode(ERRCODE_OBJECT_NOT_IN_PREREQUISITE_STATE),
-				errmsg("control file already exists for the %s extension", extname)));
+				errmsg("control file already exists for the %s extension", NameStr(*extname))));
 	}
 
 	if (PG_ARGISNULL(1)) {
@@ -4464,7 +4467,7 @@ pg_tle_set_default_version(PG_FUNCTION_ARGS)
  		PG_RETURN_BOOL(false);
  	}
 
-	verargs[0] = CStringGetTextDatum(extname);
+	verargs[0] = CStringGetTextDatum(NameStr(*extname));
 	verargs[1] = CStringGetTextDatum(extvers);
 	versql = psprintf("SELECT 1 FROM %s.available_extension_versions() e "
 		"WHERE e.name OPERATOR(pg_catalog.=) $1::pg_catalog.name AND "
@@ -4489,7 +4492,7 @@ pg_tle_set_default_version(PG_FUNCTION_ARGS)
 	/*
 	 * Modify the control file with a new version
 	 */
-	control = build_default_extension_control_file(extname);
+	control = build_default_extension_control_file(NameStr(*extname));
 
 	SET_TLEEXT;
 	parse_extension_control_file(control, NULL);
@@ -4497,7 +4500,7 @@ pg_tle_set_default_version(PG_FUNCTION_ARGS)
 
 	control->default_version = pstrdup(extvers);
 
-	ctlname = psprintf("%s.control", extname);
+	ctlname = psprintf("%s.control", NameStr(*extname));
 	ctlstr = build_extension_control_file_string(control);
 
 	/*
@@ -4527,7 +4530,7 @@ pg_tle_set_default_version(PG_FUNCTION_ARGS)
 	if (spi_rc != SPI_OK_UTILITY) {
 		ereport(ERROR,
 			(errcode(ERRCODE_INTERNAL_ERROR),
-			 errmsg("failed to updated default version for \"%s\"", extname)));
+			 errmsg("failed to updated default version for \"%s\"", NameStr(*extname))));
 		PG_RETURN_BOOL(false);
   }
 
