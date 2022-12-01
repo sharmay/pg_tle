@@ -474,7 +474,7 @@ ORDER BY x.source;
 -- fail
 SELECT pgtle.uninstall_update_path('new_ext', '1.1', '1.0');
 ERROR:  Extension new_ext does not exist
-CONTEXT:  PL/pgSQL function uninstall_update_path(text,text,text) line 16 at RAISE
+CONTEXT:  PL/pgSQL function uninstall_update_path(name,text,text) line 16 at RAISE
 -- try ininstall with if exists, see false
 SELECT pgtle.uninstall_update_path_if_exists('new_ext', '1.1', '1.0');
  uninstall_update_path_if_exists 
@@ -624,7 +624,7 @@ SELECT pgtle.uninstall_extension('broken_ext');
 -- error
 SELECT pgtle.uninstall_extension('bogus');
 ERROR:  Extension bogus does not exist
-CONTEXT:  PL/pgSQL function uninstall_extension(text) line 18 at RAISE
+CONTEXT:  PL/pgSQL function uninstall_extension(name) line 18 at RAISE
 -- uninstall_if_exists with a non-existent extension
 -- returns false, no error
 SELECT pgtle.uninstall_extension_if_exists('bogus');
