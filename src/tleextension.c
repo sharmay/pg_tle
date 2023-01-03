@@ -50,6 +50,9 @@
 #include "catalog/objectaccess.h"
 #include "catalog/pg_authid.h"
 #include "catalog/pg_collation.h"
+#if PG_VERSION_NUM >= 160000
+#include "catalog/pg_database.h"
+#endif
 #include "catalog/pg_depend.h"
 #include "catalog/pg_extension.h"
 #include "catalog/pg_namespace.h"
@@ -85,6 +88,12 @@
 #include "constants.h"
 #include "tleextension.h"
 #include "compatibility.h"
+
+/* 
+ * Use our version-specific static declaration here for the
+ * process utility hook.
+ */
+_PU_HOOK;
 
 extern bool tleParseConfigFp(FILE *fp, const char *config_file,
 							int depth, int elevel, ConfigVariable **head_p,
@@ -670,7 +679,6 @@ get_extension_script_filename(ExtensionControlFile *control,
 	return result;
 }
 
-
 /*
  * Parse contents of primary or auxiliary control file or string, and fill in
  * fields of *control.  We parse primary file or string if version == NULL,
@@ -1203,8 +1211,9 @@ extension_is_trusted(ExtensionControlFile *control)
 	/* Never trust unless extension's control file says it's okay */
 	if (!control->trusted)
 		return false;
+
 	/* Allow if user has CREATE privilege on current database */
-	aclresult = pg_database_aclcheck(MyDatabaseId, GetUserId(), ACL_CREATE);
+	aclresult = PG_DATABASE_ACLCHECK(MyDatabaseId, GetUserId(), ACL_CREATE);
 	if (aclresult == ACLCHECK_OK)
 		return true;
 	return false;
@@ -2166,13 +2175,14 @@ static Oid get_tlefunc_oid_if_exists(const char *funcname)
 {
 	char	   *qualname = NULL;
 	List	   *namelist = NULL;
-		
+	Oid	     argtypes[1];
+
 	qualname = psprintf("%s.%s",
 			    quote_identifier(PG_TLE_NSPNAME),
 			    quote_identifier(funcname));
-	namelist = stringToQualifiedNameList(qualname);
+	namelist = STRING_TO_QUALIFIED_NAME_LIST(qualname);
 
-	return LookupFuncName(namelist, 0, NULL, true /* missing_ok */);
+	return LookupFuncName(namelist, 0, argtypes, true /* missing_ok */);
 }
 
 /*
@@ -2186,9 +2196,16 @@ tleCreateExtension(ParseState *pstate, CreateExtensionStmt *stmt)
 	DefElem		   *d_cascade = NULL;
 	char		   *schemaName = NULL;
 	char		   *versionName = NULL;
+	char	   	   *ctlname = NULL;
+	char	   	   *sqlname = NULL;
+	char	   	   *extname = NULL;
 	bool		   cascade = false;
 	ListCell	   *lc;
 	ObjectAddress	   retobj;
+	ObjectAddress	   ctlfunc, sqlfunc;
+	Oid	   	   ctlfuncid = InvalidOid;
+	Oid	   	   sqlfuncid = InvalidOid;
+	ExtensionControlFile *pcontrol = NULL;
 
 	/* Determine if this is a pg_tle extnsion rather than a "real" extension */
 	if (strncmp(pstate->p_sourcetext, PG_TLE_MAGIC, sizeof(PG_TLE_MAGIC)) == 0)
@@ -2267,18 +2284,11 @@ tleCreateExtension(ParseState *pstate, CreateExtensionStmt *stmt)
 									 NIL,
 									 true);
 
-	char	   	   *ctlname = NULL;
-	char	   	   *sqlname = NULL;
-	Oid	   	   ctlfuncid = InvalidOid;
-	Oid	   	   sqlfuncid = InvalidOid;
-	ObjectAddress	   ctlfunc, sqlfunc;
-	ExtensionControlFile *pcontrol = NULL;
-
 	/*
 	 * Build appropriate function names for the control and sql functions 
 	 * based on extension name and version
 	 */
-	char *extname = stmt->extname;
+	extname = stmt->extname;
 
 	if (versionName == NULL)
 	{
@@ -3184,12 +3194,12 @@ tleAlterExtensionNamespace(const char *extensionName, const char *newschema, Oid
 	 * Permission check: must own extension.  Note that we don't bother to
 	 * check ownership of the individual member objects ...
 	 */
-	if (!pg_extension_ownercheck(extensionOid, GetUserId()))
+	if (!PG_EXTENSION_OWNERCHECK(extensionOid, GetUserId()))
 		aclcheck_error(ACLCHECK_NOT_OWNER, OBJECT_EXTENSION,
 					   extensionName);
 
 	/* Permission check: must have creation rights in target namespace */
-	aclresult = pg_namespace_aclcheck(nspOid, GetUserId(), ACL_CREATE);
+	aclresult = PG_NAMESPACE_ACLCHECK(nspOid, GetUserId(), ACL_CREATE);
 	if (aclresult != ACLCHECK_OK)
 		aclcheck_error(aclresult, OBJECT_SCHEMA, newschema);
 
@@ -3408,7 +3418,7 @@ tleExecAlterExtensionStmt(ParseState *pstate, AlterExtensionStmt *stmt)
 	table_close(extRel, AccessShareLock);
 
 	/* Permission check: must own extension */
-	if (!pg_extension_ownercheck(extensionOid, GetUserId()))
+	if (!PG_EXTENSION_OWNERCHECK(extensionOid, GetUserId()))
 		aclcheck_error(ACLCHECK_NOT_OWNER, OBJECT_EXTENSION,
 					   stmt->extname);
 
@@ -3696,7 +3706,7 @@ tleExecAlterExtensionContentsStmt(AlterExtensionContentsStmt *stmt,
 								   &relation, AccessShareLock, false);
 
 	/* Permission check: must own extension */
-	if (!pg_extension_ownercheck(extension.objectId, GetUserId()))
+	if (!PG_EXTENSION_OWNERCHECK(extension.objectId, GetUserId()))
 		aclcheck_error(ACLCHECK_NOT_OWNER, OBJECT_EXTENSION,
 					   stmt->extname);
 
@@ -4179,7 +4189,12 @@ pg_tle_install_extension(PG_FUNCTION_ARGS)
 	ListCell	*req;
 	bool		has_ext = false;
 	ExtensionControlFile	*control;
-
+	ObjectAddress	   pgtleobj;
+	ObjectAddress	   ctlfunc;
+	ObjectAddress	   sqlfunc;
+	Oid	   	   pgtleExtId;
+	Oid	   	   ctlfuncid;
+	Oid	   	   sqlfuncid;
 
 /*	if (PG_ARGISNULL(0)) {
 		ereport(ERROR, (errcode(ERRCODE_NULL_VALUE_NOT_ALLOWED),
@@ -4361,13 +4376,6 @@ pg_tle_install_extension(PG_FUNCTION_ARGS)
 	}
 
 	/* .sql and .control functions must depend on pg_tle extension */
-	ObjectAddress	   pgtleobj;
-	ObjectAddress	   ctlfunc;
-	ObjectAddress	   sqlfunc;
-	Oid	   	   pgtleExtId;
-	Oid	   	   ctlfuncid;
-	Oid	   	   sqlfuncid;
-
 	pgtleExtId = get_extension_oid(PG_TLE_EXTNAME, true /* missing_ok */);
 	if (pgtleExtId == InvalidOid)
 		elog(ERROR, "could not find extension %s", PG_TLE_EXTNAME);

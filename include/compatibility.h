@@ -89,9 +89,6 @@
 #error "This extension only builds with PostgreSQL 9.4 or later"
 #endif
 
-/* Use our version-specific static declaration here */
-_PU_HOOK;
-
 /* additional compatibility hacks */
 #if PG_VERSION_NUM >= 150000
 #define PG_ANALYZE_AND_REWRITE		pg_analyze_and_rewrite_fixedparams
@@ -118,10 +115,14 @@ _PU_HOOK;
 #define GETOBJECTDESCRIPTION(a)		getObjectDescription(a, false)
 #endif
 
-/* if prior to pg13, upgrade to newer macro defs */
-#ifndef PG_FINALLY
+/* if prior to pg13, upgrade to newer macro defs.
+ * This also adds support for PG_FINALLY  */
+#if PG_VERSION_NUM < 130000
 #ifdef PG_TRY
 #undef PG_TRY
+#endif
+#ifdef PG_CATCH
+#undef PG_CATCH
 #endif
 #ifdef PG_END_TRY
 #undef PG_END_TRY
@@ -136,6 +137,13 @@ _PU_HOOK;
 		if (sigsetjmp(_local_sigjmp_buf, 0) == 0) \
 		{ \
 			PG_exception_stack = &_local_sigjmp_buf
+
+#define PG_CATCH()	\
+		} \
+		else \
+		{ \
+			PG_exception_stack = _save_exception_stack; \
+			error_context_stack = _save_context_stack
 
 #define PG_FINALLY() \
 		} \
@@ -153,7 +161,7 @@ _PU_HOOK;
 		error_context_stack = _save_context_stack; \
 	} while (0)
 
-#endif	/* PG_FINALLY not defined */
+#endif	/* macro defs (e.g. PG_FINALLY) */
 
 /* also prior to pg13, add some newer macro defs */
 #ifndef TYPALIGN_CHAR
@@ -161,6 +169,18 @@ _PU_HOOK;
 #endif
 #ifndef TYPALIGN_INT
 #define  TYPALIGN_INT			'i' /* int alignment (typically 4 bytes) */
+#endif
+
+/*
+ * PostgreSQL 13 changed the SPI interface to include a "numvals" attribute that
+ * lists out the total number of values returned in a SPITupleTable. This is
+ * meant to replace "SPI_processed" as a means of getting the row count. This
+ * macros allows for this transition to occur
+ */
+#if PG_VERSION_NUM < 130000
+#define SPI_NUMVALS(tuptable)	(SPI_processed)
+#else
+#define SPI_NUMVALS(tuptable)	(tuptable->numvals)
 #endif
 
 /* prior to pg12 some additional missing macros */
@@ -171,5 +191,18 @@ _PU_HOOK;
 #define Anum_pg_extension_oid	ObjectIdAttributeNumber
 #endif
 #endif
+
+#if (PG_VERSION_NUM < 160000)
+#define PG_DATABASE_ACLCHECK(DatabaseId, UserId, Operation) pg_database_aclcheck(DatabaseId, UserId, Operation)
+#define PG_EXTENSION_OWNERCHECK(ExtensionOid, UserId) pg_extension_ownercheck(ExtensionOid, UserId)
+#define PG_NAMESPACE_ACLCHECK(NamespaceOid, UserId, Operation) pg_namespace_aclcheck(NamespaceOid, UserId, Operation)
+#define STRING_TO_QUALIFIED_NAME_LIST(string) stringToQualifiedNameList(string)
+#else
+#define PG_DATABASE_ACLCHECK(DatabaseId, UserId, Operation) object_aclcheck(DatabaseRelationId, DatabaseId, UserId, Operation);
+#define PG_EXTENSION_OWNERCHECK(ExtensionOid, UserId) object_ownercheck(ExtensionRelationId, ExtensionOid, UserId)
+#define PG_NAMESPACE_ACLCHECK(NamespaceOid, UserId, Operation) object_aclcheck(NamespaceRelationId, NamespaceOid, UserId, Operation)
+#define STRING_TO_QUALIFIED_NAME_LIST(string) stringToQualifiedNameList(string, NULL)
+#endif
+
 
 #endif	/* SET_USER_COMPAT_H */
