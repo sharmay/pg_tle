@@ -494,76 +494,49 @@ GRANT EXECUTE ON FUNCTION pgtle.uninstall_update_path_if_exists
 --  feature pgtle.pg_tle_features
 --) TO pgtle_admin;
 
--- Prevent function from being dropped if referenced in table
---CREATE FUNCTION pgtle.pg_tle_feature_info_sql_drop()
---RETURNS event_trigger
---LANGUAGE plpgsql
---AS $$
---DECLARE
---obj RECORD;
---num_rows int;
---
---BEGIN
---	FOR obj IN SELECT * FROM pg_catalog.pg_event_trigger_dropped_objects()
---
---	LOOP
---	IF tg_tag = 'DROP FUNCTION'
---	THEN
---		select count(*) into num_rows from pgtle.feature_info
---		where obj_identity OPERATOR(pg_catalog.=) obj.object_identity;
---
---		IF num_rows > 0 then
---			RAISE EXCEPTION 'Function is referenced in pgtle.feature_info';
---		END IF;
---	END IF;
---
---	END LOOP;
---END;
---$$;
-
---CREATE EVENT TRIGGER pg_tle_event_trigger_for_drop_function
---   ON sql_drop
---   EXECUTE FUNCTION pgtle.pg_tle_feature_info_sql_drop();
---
 --REVOKE ALL ON SCHEMA pgtle FROM PUBLIC;
 --GRANT USAGE ON SCHEMA pgtle TO PUBLIC;
 --GRANT INSERT,DELETE ON TABLE pgtle.feature_info TO pgtle_admin;
 
 -- Prevent function from being dropped if referenced in table
---CREATE OR REPLACE FUNCTION pgtle.pg_tle_feature_info_sql_drop()
---RETURNS event_trigger
---LANGUAGE plpgsql
---AS $$
---DECLARE
---obj RECORD;
---num_rows int;
---
---BEGIN
---	FOR obj IN SELECT * FROM pg_catalog.pg_event_trigger_dropped_objects()
---
---	LOOP
---		IF obj.object_type = 'function' THEN
---			-- if this is from a "DROP EXTENSION" call, use this to clean up any
---			-- remaining registered features associated with this extension
---			-- otherwise, continue to pass through
---			IF TG_TAG = 'DROP EXTENSION' THEN
---				BEGIN
---					DELETE FROM pgtle.feature_info
---					WHERE obj_identity OPERATOR(pg_catalog.=) obj.object_identity;
---				EXCEPTION WHEN insufficient_privilege THEN
---					-- do nothing, continue on
---				END;
---			ELSE
---				SELECT count(*) INTO num_rows
---				FROM pgtle.feature_info
---				WHERE obj_identity OPERATOR(pg_catalog.=) obj.object_identity;
---
---				IF num_rows > 0 then
---					RAISE EXCEPTION 'Function is referenced in pgtle.feature_info';
---				END IF;
---			END IF;
---		END IF;
---	END LOOP;
---END;
---$$;
+
+CREATE OR REPLACE FUNCTION pgtle.pg_tle_feature_info_schema_rename()
+RETURNS event_trigger
+LANGUAGE plpgsql
+AS $$
+DECLARE
+  obj RECORD;
+  num_rows int;
+  schname text;
+
+BEGIN
+	FOR obj IN SELECT * FROM pg_catalog.pg_event_trigger_ddl_commands()
+
+	LOOP
+  select current_query() into schname;
+    RAISE NOTICE '% current_query %', tg_tag, schname;
+  SELECT nspname INTO schname from pg_catalog.pg_namespace where oid = obj.objid;
+    RAISE NOTICE '% nspname %', tg_tag, schname;
+    RAISE NOTICE '% classid %',  tg_tag, obj.classid;
+    RAISE NOTICE '% objid %',  tg_tag, obj.objid;
+    RAISE NOTICE '% objsubid %',  tg_tag, obj.objsubid;
+    RAISE NOTICE '% command_tag %',  tg_tag, obj.command_tag;
+    RAISE NOTICE '% object_type %',  tg_tag, obj.object_type;
+    RAISE NOTICE '% schema_name %',  tg_tag, obj.schema_name;
+    RAISE NOTICE '% object_identity %',  tg_tag, obj.object_identity;
+    RAISE NOTICE '% in_extension %',  tg_tag, obj.in_extension;
+    -- RAISE NOTICE '% command %',  tg_tag, obj.command;
+	END LOOP;
+  if tg_tag = 'ALTER SCHEMA' then
+  RAISE EXCEPTION 'Force Fail';
+  end if;
+END;
+$$;
+
+CREATE EVENT TRIGGER pg_tle_event_trigger_for_schema_rename_pre
+   ON ddl_command_start
+   EXECUTE FUNCTION pgtle.pg_tle_feature_info_schema_rename();
+CREATE EVENT TRIGGER pg_tle_event_trigger_for_schema_rename_post
+   ON ddl_command_end
+   EXECUTE FUNCTION pgtle.pg_tle_feature_info_schema_rename();
 

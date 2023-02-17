@@ -4382,11 +4382,11 @@ pg_tle_install_extension(PG_FUNCTION_ARGS)
   
 	ctlfuncid = get_tlefunc_oid_if_exists(ctlname);
 	if (ctlfuncid == InvalidOid)
-		elog(ERROR, "could not find control function %s for extension %s in schema %s", quote_identifier(ctlname), quote_identifier(extname), PG_TLE_NSPNAME);
+		elog(ERROR, "could not find control function %s for extension %s in schema %s", quote_identifier(ctlname), quote_identifier(NameStr(*extname)), PG_TLE_NSPNAME);
 
 	sqlfuncid = get_tlefunc_oid_if_exists(sqlname);
 	if (sqlfuncid == InvalidOid)
-		elog(ERROR, "could not find sql function %s for extension %s in schema %s", quote_identifier(sqlname), quote_identifier(extname), PG_TLE_NSPNAME);
+		elog(ERROR, "could not find sql function %s for extension %s in schema %s", quote_identifier(sqlname), quote_identifier(NameStr(*extname)), PG_TLE_NSPNAME);
 
 
 	pgtleobj.classId = ExtensionRelationId;
